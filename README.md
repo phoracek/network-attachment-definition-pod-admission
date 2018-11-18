@@ -58,6 +58,13 @@ will be created as a Secret on Kubernetes API.
 ./hack/create-signed-cert.sh --service foo-admission-svc --secret foo-admission-secret --namespace default
 ```
 
+Mutating admission webhook definition must include Kubernetes CA bundle. The bundle
+can be obtained with following command.
+
+```shell
+kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n'
+```
+
 ## Configuration API
 
 **TODO**, all possible configuration (select nad type, whitelist label**
@@ -91,7 +98,7 @@ kubectl get nodes
 ## TODO
 
 - [x] single node dind cluster
-- [ ] script to get ca
+- [x] script to get ca
 - [x] script to generate cert, put it on kubernetes, sign it, generate secret (?)
 - [ ] script to generate all manifests from templates
 - [ ] basic server doing nothing
