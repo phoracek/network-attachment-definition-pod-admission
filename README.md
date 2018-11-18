@@ -48,7 +48,15 @@
 - configmap
 - installing admission
 - usage example
-.
+
+Kubernetes communicates with admission webhooks using HTTPS, therefore we need to
+create certificates and let Kubernetes CA sign them. Following script will create
+such a certificate, ask Kubernetes to sign and once that is done, key and certificate
+will be created as a Secret on Kubernetes API.
+
+```shell
+./hack/create-signed-cert.sh --service foo-admission-svc --secret foo-admission-secret --namespace default
+```
 
 ## Configuration API
 
@@ -84,7 +92,7 @@ kubectl get nodes
 
 - [x] single node dind cluster
 - [ ] script to get ca
-- [ ] script to generate cert, put it on kubernetes, sign it, generate secret (?)
+- [x] script to generate cert, put it on kubernetes, sign it, generate secret (?)
 - [ ] script to generate all manifests from templates
 - [ ] basic server doing nothing
 - [ ] implement reading of requested networks
