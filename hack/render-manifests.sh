@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [ -z ${app} ] && (echo 'please specify app name using --app'; exit 1)
-[ -z ${namespace} ] && namespace=default
+[ -z ${namespace} ] && namespace=${app}-ns
 [ -z ${service} ] && service=${app}-svc
 [ -z ${deployment} ] && deployment=${app}-deployment
 [ -z ${secret} ] && secret=${app}-certs

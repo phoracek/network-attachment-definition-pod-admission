@@ -105,19 +105,16 @@ spec:
 EOF
 ```
 
-Kubernetes communicates with admission webhooks using HTTPS, therefore we need to
-create certificates and let Kubernetes CA sign them. Following script will create
-such a certificate, ask Kubernetes to sign and once that is done, key and certificate
-will be created as a Secret on Kubernetes API.
+Kubernetes communicates with admission webhooks using HTTPS, therefore we need
+to create certificates and let Kubernetes CA sign them. Following script will
+create such a certificate, ask Kubernetes to sign and once that is done, key and
+certificate will be created as a Secret on Kubernetes API. In the next step, you
+can generate manifests for your admission webhook using included script.
+Manifests then can be found under `_out/` directory.
 
 ```shell
+kubectl apply -f _out/namespace.yml
 ./hack/create-signed-cert.sh --app foo
-```
-
-In the next step, you can generate manifests for your admission webhook using
-included script. Manifests then can be found under `_out/` directory.
-
-```shell
 CA_BUNDLE=$(kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n')
 ./hack/render-manifests.sh --app foo --ca-bundle $CA_BUNDLE --image network-attachment-definition-pod-admission
 kubectl apply -f _out/
@@ -189,7 +186,82 @@ kubectl get nodes
 - [x] extend the script to create rbac as well
 - [x] basic server doing nothing
 - [x] implement reading of requested networks
+- [x] deploy it in its own namespace and use namespaceSelector to blacklist it
 - [ ] implement reading of config map (monitor for latest changes, keep up to date (later))
 - [ ] implement json templating
-- [ ] deploy it in its own namespace and use namespaceSelector to blacklist it
 - [ ] implement end to end tests
+
+## Test script
+
+```shell
+docker build -f cmd/admission/Dockerfile -t network-attachment-definition-pod-admission .
+./dind-cluster.sh down
+./dind-cluster.sh up
+export PATH=${PWD}/.kubeadm-dind-cluster:${PATH}
+kubectl get nodes
+./dind-cluster.sh copy-image network-attachment-definition-pod-admission
+cat <<EOF | kubectl create -f -
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: network-attachment-definitions.k8s.cni.cncf.io
+spec:
+  group: k8s.cni.cncf.io
+  version: v1
+  scope: Namespaced
+  names:
+    plural: network-attachment-definitions
+    singular: network-attachment-definition
+    kind: NetworkAttachmentDefinition
+    shortNames:
+    - net-attach-def
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          properties:
+            config:
+              type: string
+EOF
+cat <<EOF | kubectl create -f -
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: macvlan-conf
+spec:
+  config: '{
+      "cniVersion": "0.3.0",
+      "type": "macvlan",
+      "master": "eth0",
+      "mode": "bridge",
+      "ipam": {
+        "type": "host-local",
+        "subnet": "192.168.1.0/24",
+        "rangeStart": "192.168.1.200",
+        "rangeEnd": "192.168.1.216",
+        "routes": [
+          { "dst": "0.0.0.0/0" }
+        ],
+        "gateway": "192.168.1.1"
+      }
+    }'
+EOF
+kubectl apply -f _out/namespace.yml
+./hack/create-signed-cert.sh --app foo
+CA_BUNDLE=$(kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n')
+./hack/render-manifests.sh --app foo --ca-bundle $CA_BUNDLE --image network-attachment-definition-pod-admission
+kubectl apply -f _out/
+cat <<EOF | kubectl create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: samplepod
+  annotations:
+    k8s.v1.cni.cncf.io/networks: macvlan-conf
+spec:
+  containers:
+  - name: samplepod
+    command: ["/bin/bash", "-c", "sleep 2000000000000"]
+    image: dougbtv/centos-network
+EOF
+```

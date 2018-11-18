@@ -25,7 +25,7 @@ done
 [ -z ${app} ] && (echo 'please specify app name using --app'; exit 1)
 [ -z ${service} ] && service=${app}-svc
 [ -z ${secret} ] && secret=${app}-certs
-[ -z ${namespace} ] && namespace=default
+[ -z ${namespace} ] && namespace=${app}-ns
 
 csrName=${service}.${namespace}
 tmpdir=$(mktemp -d)

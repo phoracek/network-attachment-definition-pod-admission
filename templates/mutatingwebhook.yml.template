@@ -2,6 +2,7 @@ apiVersion: admissionregistration.k8s.io/v1beta1
 kind: MutatingWebhookConfiguration
 metadata:
   name: ${WEBHOOK}
+  namespace: ${NAMESPACE}
   labels:
     app: ${APP}
 webhooks:
@@ -17,3 +18,7 @@ webhooks:
         apiGroups: [""]
         apiVersions: ["v1"]
         resources: ["pods"]
+    namespaceSelector:
+      matchExpressions:
+      - key: network-attachment-definition-pod-admission.example.com/ignoreAdmission
+        operator: DoesNotExist
