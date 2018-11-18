@@ -61,13 +61,32 @@
 - however, if you want to, there are some commands that should help you
 - make, test, test cluster
 
+For easier deployment and functional testing, this projects ships a
+[dind](https://github.com/kubernetes-sigs/kubeadm-dind-cluster) script. It
+allows you to deploy simple Kubernetes cluster inside a container.
+
+```shell
+# start dind cluster
+./dind-cluster.sh up
+
+# use kubectl on the cluster
+export PATH=${PWD}/.kubeadm-dind-cluster:${PATH}
+kubectl get nodes
+
+# stop the cluster
+./dind-cluster.sh down
+
+# remove dind containers and volumes
+./dind-cluster.sh clean
+```
+
 ## TODO
 
-- [ ] single node dind cluster
-- [ ] basic server doing nothing
+- [x] single node dind cluster
 - [ ] script to get ca
 - [ ] script to generate cert, put it on kubernetes, sign it, generate secret (?)
 - [ ] script to generate all manifests from templates
+- [ ] basic server doing nothing
 - [ ] implement reading of requested networks
 - [ ] implement reading of config map (monitor for latest changes, keep up to date (later))
 - [ ] implement json templating
