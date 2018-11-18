@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --image)
-            service="$2"
+            image="$2"
             shift
             ;;
         --image-pull-policy)
@@ -54,7 +54,7 @@ done
 [ -z ${webhook} ] && webhook=${app}-webhook-cfg
 [ -z ${webhook_url} ] && webhook_url=${app}.nad-pod-webhook.example.com
 [ -z ${webhook_cfg} ] && webhook_cfg=${app}-webhook-cfg
-[ -z ${image} ] && image=TODO
+[ -z ${image} ] && image=phoracek/network-attachment-definition-pod-admission
 [ -z ${image_pull_policy} ] && image_pull_policy=IfNotPresent
 [ -z ${ca_bundle} ] && (echo 'please specify ca bundle using --ca-bundle'; exit 1)
 

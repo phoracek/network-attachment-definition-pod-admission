@@ -55,7 +55,7 @@ such a certificate, ask Kubernetes to sign and once that is done, key and certif
 will be created as a Secret on Kubernetes API.
 
 ```shell
-./hack/create-signed-cert.sh --app foo-admission-svc
+./hack/create-signed-cert.sh --app foo
 ```
 
 In the next step, you can generate manifests for your admission webhook using
@@ -63,7 +63,7 @@ included script. Manifests then can be found under `_out/` directory.
 
 ```shell
 CA_BUNDLE=$(kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n')
-./hack/render-manifests.sh --app foo --ca-bundle $CA_BUNDLE
+./hack/render-manifests.sh --app foo --ca-bundle $CA_BUNDLE --image nad-admission
 kubectl apply -f _out/
 ```
 
@@ -78,6 +78,12 @@ kubectl apply -f _out/
 - however, if you want to, there are some commands that should help you
 - make, test, test cluster
 
+Build docker image with admission:
+
+```shell
+docker build -f cmd/admission/Dockerfile -t network-attachment-definition-pod-admission .
+```
+
 For easier deployment and functional testing, this projects ships a
 [dind](https://github.com/kubernetes-sigs/kubeadm-dind-cluster) script. It
 allows you to deploy simple Kubernetes cluster inside a container.
@@ -89,6 +95,9 @@ allows you to deploy simple Kubernetes cluster inside a container.
 # use kubectl on the cluster
 export PATH=${PWD}/.kubeadm-dind-cluster:${PATH}
 kubectl get nodes
+
+# push local docker image to the cluster
+./dind-cluster.sh copy-image network-attachment-definition-pod-admission
 
 # stop the cluster
 ./dind-cluster.sh down
@@ -104,7 +113,7 @@ kubectl get nodes
 - [x] script to generate cert, put it on kubernetes, sign it, generate secret (?)
 - [x] script to generate all manifests from templates
 - [ ] extend the script to create rbac as well
-- [ ] basic server doing nothing
+- [x] basic server doing nothing
 - [ ] implement reading of requested networks
 - [ ] implement reading of config map (monitor for latest changes, keep up to date (later))
 - [ ] implement json templating
