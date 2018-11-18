@@ -55,14 +55,16 @@ such a certificate, ask Kubernetes to sign and once that is done, key and certif
 will be created as a Secret on Kubernetes API.
 
 ```shell
-./hack/create-signed-cert.sh --service foo-admission-svc --secret foo-admission-secret --namespace default
+./hack/create-signed-cert.sh --app foo-admission-svc
 ```
 
-Mutating admission webhook definition must include Kubernetes CA bundle. The bundle
-can be obtained with following command.
+In the next step, you can generate manifests for your admission webhook using
+included script. Manifests then can be found under `_out/` directory.
 
 ```shell
-kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n'
+CA_BUNDLE=$(kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n')
+./hack/render-manifests.sh --app foo --ca-bundle $CA_BUNDLE
+kubectl apply -f _out/
 ```
 
 ## Configuration API
@@ -100,7 +102,8 @@ kubectl get nodes
 - [x] single node dind cluster
 - [x] script to get ca
 - [x] script to generate cert, put it on kubernetes, sign it, generate secret (?)
-- [ ] script to generate all manifests from templates
+- [x] script to generate all manifests from templates
+- [ ] extend the script to create rbac as well
 - [ ] basic server doing nothing
 - [ ] implement reading of requested networks
 - [ ] implement reading of config map (monitor for latest changes, keep up to date (later))

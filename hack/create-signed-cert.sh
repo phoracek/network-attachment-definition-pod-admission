@@ -1,7 +1,11 @@
-#!/bin/bash
+#!/bin/bash -e
 
 while [[ $# -gt 0 ]]; do
     case ${1} in
+        --app)
+            app="$2"
+            shift
+            ;;
         --service)
             service="$2"
             shift
@@ -18,8 +22,9 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-[ -z ${service} ] && service=example-webhook-svc
-[ -z ${secret} ] && secret=example-webhook-certs
+[ -z ${app} ] && (echo 'please specify app name using --app'; exit 1)
+[ -z ${service} ] && service=${app}-svc
+[ -z ${secret} ] && secret=${app}-certs
 [ -z ${namespace} ] && namespace=default
 
 csrName=${service}.${namespace}
