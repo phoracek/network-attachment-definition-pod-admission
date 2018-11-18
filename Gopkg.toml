@@ -10,6 +10,20 @@
   name = "k8s.io/apimachinery"
   branch = "release-1.12"
 
+[[constraint]]
+  name = "k8s.io/client-go"
+  branch = "release-9.0"
+
+[[constraint]]
+  name = "github.com/intel/multus-cni"
+  version = "v3.1"
+
+# TODO: drop once https://github.com/K8sNetworkPlumbingWG/network-attachment-definition-client/pull/6 is merged
+[[constraint]]
+  name = "github.com/k8snetworkplumbingwg/network-attachment-definition-client"
+  source = "https://github.com/phoracek/npwg-network-attachment-definition-client"
+  branch = "release-1.12-pr"
+
 [prune]
   go-tests = true
   unused-packages = true

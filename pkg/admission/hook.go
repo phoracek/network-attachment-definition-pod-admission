@@ -1,3 +1,4 @@
+// TODO: rename to webhook.go
 package admission
 
 import (
@@ -7,18 +8,23 @@ import (
 	"net/http"
 
 	"github.com/golang/glog"
+	netclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	"k8s.io/api/admission/v1beta1"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var (
 	runtimeScheme = runtime.NewScheme()
 	codecs        = serializer.NewCodecFactory(runtimeScheme)
 	deserializer  = codecs.UniversalDeserializer()
+	clientset     *netclient.Clientset
 )
 
 var ignoredNamespaces = []string{
@@ -39,20 +45,70 @@ type patchOperation struct {
 func init() {
 	_ = corev1.AddToScheme(runtimeScheme)
 	_ = admissionregistrationv1beta1.AddToScheme(runtimeScheme)
+
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		glog.Fatalf("Error while obtaining cluster config: %v", err)
+	}
+
+	clientset, err = netclient.NewForConfig(config)
+	if err != nil {
+		glog.Fatalf("Error building example clientset: %v", err)
+	}
+}
+
+//
+//
+
+type defaultKubeClient struct {
+	client kubernetes.Interface
+}
+
+func newDefaultKubeClient(clientset kubernetes.Interface) *defaultKubeClient {
+	return &defaultKubeClient{clientset}
+}
+
+func (d *defaultKubeClient) GetRawWithPath(path string) ([]byte, error) {
+	return d.client.ExtensionsV1beta1().RESTClient().Get().AbsPath(path).DoRaw()
+}
+
+func (d *defaultKubeClient) GetPod(namespace, name string) (*v1.Pod, error) {
+	return d.client.Core().Pods(namespace).Get(name, metav1.GetOptions{})
+}
+
+func (d *defaultKubeClient) UpdatePodStatus(pod *v1.Pod) (*v1.Pod, error) {
+	return d.client.Core().Pods(pod.Namespace).UpdateStatus(pod)
 }
 
 // Check whether the target resoured need to be mutated
-func mutationRequired(ignoredList []string, metadata *metav1.ObjectMeta) bool {
+func mutationRequired(ignoredList []string, pod *v1.Pod) bool {
 	for _, namespace := range ignoredList {
-		if metadata.Namespace == namespace {
-			glog.Infof("Skip mutation for %v for it' in special namespace:%v", metadata.Name, metadata.Namespace)
+		if pod.ObjectMeta.Namespace == namespace {
+			glog.Infof("Skip mutation for %v for it' in special namespace: %v", pod.ObjectMeta.Name, pod.ObjectMeta.Namespace)
 			return false
 		}
 	}
 
+	netAn, netAnOk := pod.Annotations[NETWORKS_ANNOTATION]
+	if !netAnOk {
+		return false
+	}
+	b, err := parsePodNetworkAnnotation(netAn, "default")
+	if err != nil {
+		glog.Fatalf("Error while TODO: %v", err)
+	}
+	for _, network := range b {
+
+		nad, err := clientset.K8sCniCncfIo().NetworkAttachmentDefinitions(network.Namespace).Get(network.Name, metav1.GetOptions{})
+		if err != nil {
+			glog.Fatalf("Error getting network attachment definition: %v", err)
+		}
+		glog.Infof("network attachment definition %s with config %q", nad.Name, nad.Spec.Config)
+	}
+
 	required := true
 
-	glog.Infof("Mutation policy for %v/%v: required:%v", metadata.Namespace, metadata.Name, required)
+	glog.Infof("Mutation policy for %v/%v: required: %v", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, required)
 	return required
 }
 
@@ -102,7 +158,7 @@ func (whsvr *WebhookServer) mutate(ar *v1beta1.AdmissionReview) *v1beta1.Admissi
 	glog.Infof("AdmissionReview for Kind=%v, Namespace=%v Name=%v (%v) UID=%v patchOperation=%v UserInfo=%v",
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
 
-	if !mutationRequired(ignoredNamespaces, &pod.ObjectMeta) {
+	if !mutationRequired(ignoredNamespaces, &pod) {
 		glog.Infof("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &v1beta1.AdmissionResponse{
 			Allowed: true,

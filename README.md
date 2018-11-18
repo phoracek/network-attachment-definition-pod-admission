@@ -49,6 +49,62 @@
 - installing admission
 - usage example
 
+Create NetworkAttachmentDefinition CRD:
+
+```shell
+cat <<EOF | kubectl create -f -
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: network-attachment-definitions.k8s.cni.cncf.io
+spec:
+  group: k8s.cni.cncf.io
+  version: v1
+  scope: Namespaced
+  names:
+    plural: network-attachment-definitions
+    singular: network-attachment-definition
+    kind: NetworkAttachmentDefinition
+    shortNames:
+    - net-attach-def
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          properties:
+            config:
+              type: string
+EOF
+```
+
+Create example of a NetworkAttachmentDefinition:
+
+```shell
+cat <<EOF | kubectl create -f -
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: macvlan-conf
+spec:
+  config: '{
+      "cniVersion": "0.3.0",
+      "type": "macvlan",
+      "master": "eth0",
+      "mode": "bridge",
+      "ipam": {
+        "type": "host-local",
+        "subnet": "192.168.1.0/24",
+        "rangeStart": "192.168.1.200",
+        "rangeEnd": "192.168.1.216",
+        "routes": [
+          { "dst": "0.0.0.0/0" }
+        ],
+        "gateway": "192.168.1.1"
+      }
+    }'
+EOF
+```
+
 Kubernetes communicates with admission webhooks using HTTPS, therefore we need to
 create certificates and let Kubernetes CA sign them. Following script will create
 such a certificate, ask Kubernetes to sign and once that is done, key and certificate
@@ -63,8 +119,26 @@ included script. Manifests then can be found under `_out/` directory.
 
 ```shell
 CA_BUNDLE=$(kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n')
-./hack/render-manifests.sh --app foo --ca-bundle $CA_BUNDLE --image nad-admission
+./hack/render-manifests.sh --app foo --ca-bundle $CA_BUNDLE --image network-attachment-definition-pod-admission
 kubectl apply -f _out/
+```
+
+Create pod that requests a network:
+
+```shell
+cat <<EOF | kubectl create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: samplepod
+  annotations:
+    k8s.v1.cni.cncf.io/networks: macvlan-conf
+spec:
+  containers:
+  - name: samplepod
+    command: ["/bin/bash", "-c", "sleep 2000000000000"]
+    image: dougbtv/centos-network
+EOF
 ```
 
 ## Configuration API
@@ -112,9 +186,9 @@ kubectl get nodes
 - [x] script to get ca
 - [x] script to generate cert, put it on kubernetes, sign it, generate secret (?)
 - [x] script to generate all manifests from templates
-- [ ] extend the script to create rbac as well
+- [x] extend the script to create rbac as well
 - [x] basic server doing nothing
-- [ ] implement reading of requested networks
+- [x] implement reading of requested networks
 - [ ] implement reading of config map (monitor for latest changes, keep up to date (later))
 - [ ] implement json templating
 - [ ] deploy it in its own namespace and use namespaceSelector to blacklist it
