@@ -117,4 +117,5 @@ kubectl get nodes
 - [ ] implement reading of requested networks
 - [ ] implement reading of config map (monitor for latest changes, keep up to date (later))
 - [ ] implement json templating
+- [ ] deploy it in its own namespace and use namespaceSelector to blacklist it
 - [ ] implement end to end tests

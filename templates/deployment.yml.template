@@ -11,6 +11,7 @@ spec:
       labels:
         app: ${APP}
     spec:
+      serviceAccountName: ${SERVICE_ACCOUNT}
       containers:
         - name: ${APP}
           image: ${IMAGE}
