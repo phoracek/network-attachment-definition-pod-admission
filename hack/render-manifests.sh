@@ -18,6 +18,10 @@ while [[ $# -gt 0 ]]; do
             deployment="$2"
             shift
             ;;
+        --config)
+            config="$2"
+            shift
+            ;;
         --certs)
             certs="$2"
             shift
@@ -62,6 +66,7 @@ done
 [ -z ${namespace} ] && namespace=${app}-ns
 [ -z ${service} ] && service=${app}-svc
 [ -z ${deployment} ] && deployment=${app}-deployment
+[ -z ${config} ] && config=${app}-conf
 [ -z ${secret} ] && secret=${app}-certs
 [ -z ${webhook} ] && webhook=${app}-webhook-cfg
 [ -z ${webhook_url} ] && webhook_url=${app}.nad-pod-webhook.example.com
@@ -80,6 +85,7 @@ for template in templates/*.template; do
         -e "s/\${NAMESPACE}/${namespace}/g" \
         -e "s/\${SERVICE}/${service}/g" \
         -e "s/\${DEPLOYMENT}/${deployment}/g" \
+        -e "s/\${CONFIG}/${config}/g" \
         -e "s/\${SECRET}/${secret}/g" \
         -e "s/\${WEBHOOK}/${webhook}/g" \
         -e "s/\${WEBHOOK_URL}/${webhook_url}/g" \

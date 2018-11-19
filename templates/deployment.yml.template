@@ -20,6 +20,7 @@ spec:
           args:
             - -tlsCertFile=/etc/webhook/certs/cert.pem
             - -tlsKeyFile=/etc/webhook/certs/key.pem
+            - -configFile=/etc/webhook/config/config.yml
             - -alsologtostderr
             - -v=4
             - 2>&1
@@ -27,7 +28,12 @@ spec:
             - name: webhook-certs
               mountPath: /etc/webhook/certs
               readOnly: true
+            - name: webhook-config
+              mountPath: /etc/webhook/config
       volumes:
         - name: webhook-certs
           secret:
             secretName: ${SECRET}
+        - name: webhook-config
+          configMap:
+            name: ${CONFIG}

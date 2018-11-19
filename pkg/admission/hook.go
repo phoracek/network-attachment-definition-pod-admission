@@ -2,10 +2,12 @@
 package admission
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"text/template"
 
 	"github.com/golang/glog"
 	netclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
@@ -16,7 +18,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
@@ -33,6 +34,7 @@ var ignoredNamespaces = []string{
 }
 
 type WebhookServer struct {
+	Config *Config
 	Server *http.Server
 }
 
@@ -57,41 +59,21 @@ func init() {
 	}
 }
 
-//
-//
-
-type defaultKubeClient struct {
-	client kubernetes.Interface
-}
-
-func newDefaultKubeClient(clientset kubernetes.Interface) *defaultKubeClient {
-	return &defaultKubeClient{clientset}
-}
-
-func (d *defaultKubeClient) GetRawWithPath(path string) ([]byte, error) {
-	return d.client.ExtensionsV1beta1().RESTClient().Get().AbsPath(path).DoRaw()
-}
-
-func (d *defaultKubeClient) GetPod(namespace, name string) (*v1.Pod, error) {
-	return d.client.Core().Pods(namespace).Get(name, metav1.GetOptions{})
-}
-
-func (d *defaultKubeClient) UpdatePodStatus(pod *v1.Pod) (*v1.Pod, error) {
-	return d.client.Core().Pods(pod.Namespace).UpdateStatus(pod)
-}
-
 // Check whether the target resoured need to be mutated
-func mutationRequired(ignoredList []string, pod *v1.Pod) bool {
+func (whsvr *WebhookServer) mutationRequired(ignoredList []string, pod *v1.Pod) ([]byte, bool) {
+	// TODO: combine all patches here
+	var patches []interface{}
+
 	for _, namespace := range ignoredList {
 		if pod.ObjectMeta.Namespace == namespace {
 			glog.Infof("Skip mutation for %v for it' in special namespace: %v", pod.ObjectMeta.Name, pod.ObjectMeta.Namespace)
-			return false
+			return nil, false
 		}
 	}
 
 	netAn, netAnOk := pod.Annotations[NETWORKS_ANNOTATION]
 	if !netAnOk {
-		return false
+		return nil, false
 	}
 	b, err := parsePodNetworkAnnotation(netAn, "default")
 	if err != nil {
@@ -104,42 +86,56 @@ func mutationRequired(ignoredList []string, pod *v1.Pod) bool {
 			glog.Fatalf("Error getting network attachment definition: %v", err)
 		}
 		glog.Infof("network attachment definition %s with config %q", nad.Name, nad.Spec.Config)
-	}
 
-	required := true
+		var netConfig map[string]interface{}
+		err = json.Unmarshal([]byte(nad.Spec.Config), &netConfig)
+		if err != nil {
+			glog.Errorf("Failed to unmashal network config %s: %v", nad.Spec.Config, err)
+			return nil, false
+		}
 
-	glog.Infof("Mutation policy for %v/%v: required: %v", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, required)
-	return required
-}
+		netTypeRaw, netTypeFound := netConfig["type"]
+		if !netTypeFound {
+			glog.Errorf("Given network is missing type")
+			return nil, false
+		}
 
-func updateAnnotation(target map[string]string, added map[string]string) (patch []patchOperation) {
-	for key, value := range added {
-		if target == nil || target[key] == "" {
-			target = map[string]string{}
-			patch = append(patch, patchOperation{
-				Op:   "add",
-				Path: "/metadata/annotations",
-				Value: map[string]string{
-					key: value,
-				},
-			})
-		} else {
-			patch = append(patch, patchOperation{
-				Op:    "replace",
-				Path:  "/metadata/annotations/" + key,
-				Value: value,
-			})
+		netType := netTypeRaw.(string)
+		glog.Infof("network attachment definition with type %s", netType)
+
+		for _, rule := range whsvr.Config.Rules {
+			if rule.Type == netType {
+				glog.Infof("found a rule matching given type: %v", rule)
+
+				t, err := template.New("").Parse(rule.Patch)
+				if err != nil {
+					glog.Errorf("Failed to parse template: %v", err)
+					return nil, false
+				}
+				buff := new(bytes.Buffer)
+				err = t.Execute(buff, map[string]interface{}{"Definition": nad, "Config": netConfig})
+				if err != nil {
+					glog.Errorf("Failed to execute template: %v", err)
+					return nil, false
+				}
+				p := buff.Bytes()
+
+				var subPatches []interface{}
+				err = json.Unmarshal(p, &subPatches)
+				if err != nil {
+					glog.Errorf("Failed to unmashal patch %s: %v", string(p), err)
+					return nil, false
+				}
+
+				patches = append(patches, subPatches...)
+			}
 		}
 	}
-	return patch
-}
 
-func createPatch(pod *corev1.Pod, annotations map[string]string) ([]byte, error) {
-	var patch []patchOperation
+	patch, err := json.Marshal(patches)
 
-	patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-
-	return json.Marshal(patch)
+	glog.Infof("Mutation policy for %v/%v: required: %v", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, true)
+	return patch, true
 }
 
 func (whsvr *WebhookServer) mutate(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
@@ -158,27 +154,23 @@ func (whsvr *WebhookServer) mutate(ar *v1beta1.AdmissionReview) *v1beta1.Admissi
 	glog.Infof("AdmissionReview for Kind=%v, Namespace=%v Name=%v (%v) UID=%v patchOperation=%v UserInfo=%v",
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
 
-	if !mutationRequired(ignoredNamespaces, &pod) {
+	patch, required := whsvr.mutationRequired(ignoredNamespaces, &pod)
+
+	if !required {
 		glog.Infof("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &v1beta1.AdmissionResponse{
 			Allowed: true,
 		}
 	}
 
-	annotations := map[string]string{"petr": "was here"}
-	patchBytes, err := createPatch(&pod, annotations)
-	if err != nil {
-		return &v1beta1.AdmissionResponse{
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
-	}
+	//
+	glog.Infof("XXX combined patch: %v", string(patch))
+	//
 
-	glog.Infof("AdmissionResponse: patch=%v\n", string(patchBytes))
+	glog.Infof("AdmissionResponse: patch=%v\n", string(patch))
 	return &v1beta1.AdmissionResponse{
 		Allowed: true,
-		Patch:   patchBytes,
+		Patch:   patch,
 		PatchType: func() *v1beta1.PatchType {
 			pt := v1beta1.PatchTypeJSONPatch
 			return &pt
